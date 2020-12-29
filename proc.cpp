@@ -13,11 +13,6 @@ struct targs{
   bool flag;
 };
 
-/*
- * First Do a sanity check with functionality that should work
- * 
- * Add a mutex lock for synchronization. Any time anyone wants to buffer, get the lock
- */
 
 void producer(targs * info)
 {
