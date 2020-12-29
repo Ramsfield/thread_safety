@@ -27,6 +27,7 @@ void producer(targs * info)
     info->buffer.push_back(i);
     pthread_cond_signal(&info->cons_sig);
     pthread_mutex_unlock(&info->lock);
+    std::cout << "Put " << i << " into deque" << std::endl;
   }
   info->flag = true;
 }
@@ -82,20 +83,14 @@ int main()
   pthread_mutexattr_setpshared(&mutAttr, PTHREAD_PROCESS_SHARED);
   pthread_mutex_init(&info->lock, &mutAttr);
 
-  //Spin off processes
-  if(!fork())
-  {
-    producer(info);
-    exit(0);
-  }
+  //Spin of Proc
   if(!fork())
   {
     consumer(info);
     exit(0);
   }
 
-  //Get the producer back
-  wait(NULL);
+  producer(info);
 
   //Get the consumer back
   while(true)
