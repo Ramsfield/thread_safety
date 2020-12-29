@@ -1,6 +1,10 @@
 #include<pthread.h>
 #include<deque>
 #include<iostream>
+#include<sys/types.h>
+#include<unistd.h>
+#include<sys/mman.h>
+#include<sys/wait.h>
 
 struct targs{
   std::deque<int> buffer;
@@ -54,30 +58,61 @@ void consumer(targs * info)
 
 int main()
 {
-  targs info;
+  targs * info;
 
-  info.flag = false;
+
+  /* 
+   * Initialize shared memory -- will need for the locks and signals
+   * Shouldn't affect the deque since the deque should be a shared memory item itself
+   */
+  info = (targs *) mmap(NULL, sizeof(targs), PROT_READ|PROT_WRITE, 
+      MAP_SHARED|MAP_ANONYMOUS, -1, 0);
+
+  info->flag = false;
 
   //Init the cond var
-  pthread_cond_init(&info.cons_sig, NULL);
+  pthread_condattr_t condAttr;
+  pthread_condattr_init(&condAttr);
+  pthread_condattr_setpshared(&condAttr, PTHREAD_PROCESS_SHARED);
+  pthread_cond_init(&info->cons_sig, &condAttr);
 
   //Init the lock
-  pthread_mutex_init(&info.lock, NULL);
+  pthread_mutexattr_t mutAttr;
+  pthread_mutexattr_init(&mutAttr);
+  pthread_mutexattr_setpshared(&mutAttr, PTHREAD_PROCESS_SHARED);
+  pthread_mutex_init(&info->lock, &mutAttr);
 
-  pthread_t threads[2];
+  //Spin off processes
+  if(!fork())
+  {
+    producer(info);
+    exit(0);
+  }
+  if(!fork())
+  {
+    consumer(info);
+    exit(0);
+  }
 
-  //Spin off threads
-  pthread_create(threads, NULL, (void * (*)(void*)) &producer, &info);
-  pthread_create(threads+1, NULL, (void * (*)(void*)) &consumer, &info);
+  //Get the producer back
+  wait(NULL);
 
-  //Join them back
-  pthread_join(threads[0], NULL);
-  //Ensure Consumer coming back -- Flag **IS** set so the producer can't wait anymore
-  pthread_cond_broadcast(&info.cons_sig);
+  //Get the consumer back
+  while(true)
+  {
+    //Fire to get consumer back
+    pthread_cond_broadcast(&info->cons_sig);
 
-  pthread_join(threads[1], NULL);
+    if(waitpid(-1, NULL, WNOHANG))
+      break;
+  }
 
-  pthread_mutex_destroy(&info.lock);
-  pthread_cond_destroy(&info.cons_sig);
+  pthread_condattr_destroy(&condAttr);
+  pthread_mutexattr_destroy(&mutAttr);
+
+  pthread_mutex_destroy(&info->lock);
+  pthread_cond_destroy(&info->cons_sig);
+
+  munmap(info, sizeof(targs));
   return 0;
 }
